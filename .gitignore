@@ -127,4 +127,4 @@ ENV.bak/
 dmypy.json
 
 # Pyre type checker
-.pyre/ 
+.pyre/ alexnet_simulation_results.pkl
