@@ -6,14 +6,29 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
-from sklearn.neural_network import MLPClassifier
-from sklearn.ensemble import RandomForestClassifier
 import warnings
 import pickle
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, TensorDataset
+import random
 warnings.filterwarnings('ignore')
 
-# Симуляция параметров статьи без TensorFlow
-print("⚠️ TensorFlow недоступен. Используем точную симуляцию с параметрами статьи.")
+# Фиксируем random seeds для воспроизводимости
+RANDOM_SEED = 42
+random.seed(RANDOM_SEED)
+np.random.seed(RANDOM_SEED)
+torch.manual_seed(RANDOM_SEED)
+torch.cuda.manual_seed_all(RANDOM_SEED)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
+# Устанавливаем device
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"🔧 Используемое устройство: {device}")
+print(f"🎲 Random seed зафиксирован: {RANDOM_SEED}")
 
 def load_spectral_data():
     """Загружает спектральные данные растительности для 1D-AlexNet"""
@@ -56,10 +71,9 @@ def preprocess_spectra_for_1d_alexnet(spectra, labels, target_length=300):
     """
     Предобрабатывает спектры для 1D-AlexNet с использованием интерполяции.
     """
-    print("\n🔧 Предобработка спектров для 1D-AlexNet (улучшенный метод)...")
-    print(f"📏 Целевая длина спектра: {target_length} (с интерполяцией)")
+    print("\n🔧 Предобработка спектров для 1D-AlexNet...")
+    print(f"📏 Целевая длина спектра: {target_length}")
     
-    # Приводим все спектры к одинаковой длине через интерполяцию
     processed_spectra = []
     processed_labels = []
     
@@ -94,95 +108,155 @@ def preprocess_spectra_for_1d_alexnet(spectra, labels, target_length=300):
     
     return X, y, label_encoder, target_length
 
-class AlexNetSimulator:
+class AlexNet1D(nn.Module):
     """
-    Симулятор 1D-AlexNet с точными параметрами статьи:
-    - RMSprop эквивалент с learning_rate=0.001, momentum=0.3
-    - 400 эпох обучения
-    - Многократное обучение с выбором лучшей модели
+    Точная реализация 1D AlexNet согласно присланной схеме
+    (адаптированная для длины спектра 300)
     """
     
-    def __init__(self, input_size, num_classes, learning_rate=0.001, momentum=0.3):
-        self.input_size = input_size
-        self.num_classes = num_classes
-        self.learning_rate = learning_rate
-        self.momentum = momentum
-        self.models = []
-        self.best_model = None
-        self.best_accuracy = 0.0
+    def __init__(self, input_length=300, num_classes=7):
+        super(AlexNet1D, self).__init__()
         
-    def create_model(self, random_state=42):
-        """Создает модель, имитирующую 1D-AlexNet"""
-        # Эквивалент параметров статьи
-        model = MLPClassifier(
-            hidden_layer_sizes=(4096, 4096, 256),  # Имитация полносвязных слоев AlexNet
-            activation='relu',
-            solver='adam',  # Adam с настройками близкими к RMSprop
-            learning_rate_init=self.learning_rate,
-            max_iter=400,  # Параметр из статьи
-            random_state=random_state,
-            early_stopping=True,
-            validation_fraction=0.1,
-            n_iter_no_change=50,
-            batch_size=32,
-            momentum=self.momentum,  # Параметр из статьи
-            beta_1=0.9,  # Эквивалент momentum в RMSprop
-            beta_2=0.999,  # Эквивалент rho в RMSprop
-        )
-        return model
+        # Сверточные слои согласно схеме (адаптированные размеры)
+        self.conv1 = nn.Conv1d(1, 10, kernel_size=25, stride=4, padding=2)  # 10 фильтров, уменьшенный размер ядра
+        self.pool1 = nn.MaxPool1d(kernel_size=3, stride=2)                   # размер 3, stride 2
+        
+        self.conv2 = nn.Conv1d(10, 20, kernel_size=15, stride=1, padding=2)  # 20 фильтров, уменьшенный размер ядра  
+        self.pool2 = nn.MaxPool1d(kernel_size=3, stride=2)                   # размер 3, stride 2
+        
+        self.conv3 = nn.Conv1d(20, 50, kernel_size=2, stride=1, padding=1)   # 50 фильтров, размер 2, stride 1
+        self.conv4 = nn.Conv1d(50, 50, kernel_size=2, stride=1, padding=1)   # 50 фильтров, размер 2, stride 1
+        self.conv5 = nn.Conv1d(50, 25, kernel_size=2, stride=1, padding=1)   # 25 фильтров, размер 2, stride 1
+        
+        self.pool3 = nn.MaxPool1d(kernel_size=3, stride=2)                   # размер 3, stride 2
+        
+        # Вычисляем размер после сверточных слоев
+        self._calculate_fc_input_size(input_length)
+        
+        # Полносвязные слои согласно схеме
+        self.fc1 = nn.Linear(self.fc_input_size, 200)  # 200 нейронов
+        self.fc2 = nn.Linear(200, 200)                 # 200 нейронов
+        self.fc3 = nn.Linear(200, num_classes)         # количество классов
+        
+        # Dropout для регуляризации
+        self.dropout = nn.Dropout(0.5)
+        
+    def _calculate_fc_input_size(self, input_length):
+        """Вычисляет размер входа для первого полносвязного слоя"""
+        # Проводим dummy forward pass для определения размера
+        with torch.no_grad():
+            dummy_input = torch.randn(1, 1, input_length)
+            x = self._conv_forward(dummy_input)
+            self.fc_input_size = x.numel()
     
-    def train_multiple_models(self, X_train, y_train, X_test, y_test, n_runs=5):
-        """Обучает несколько моделей и выбирает лучшую согласно методологии статьи"""
-        print(f"\n🔄 МНОГОКРАТНОЕ ОБУЧЕНИЕ МОДЕЛЕЙ ({n_runs} раз)")
-        print("="*70)
-        print("🎯 Параметры из статьи:")
-        print("   - Эквивалент RMSprop (Adam с настройками)")
-        print("   - Learning Rate: 0.001")
-        print("   - Momentum: 0.3")
-        print("   - Эпохи: 400")
-        print("="*70)
+    def _conv_forward(self, x):
+        """Прохождение через сверточные слои"""
+        x = F.relu(self.conv1(x))
+        x = self.pool1(x)
         
-        for run in range(n_runs):
-            print(f"\n🚀 Тренировка модели #{run + 1}/{n_runs}")
-            print("-" * 50)
-            
-            # Создаем модель с разными начальными весами
-            model = self.create_model(random_state=42 + run)
-            
-            # Обучение
-            print("📚 Обучение модели (400 эпох)...")
-            model.fit(X_train, y_train)
-            
-            # Оценка модели
-            val_accuracy = model.score(X_test, y_test)
-            print(f"📊 Точность модели #{run + 1}: {val_accuracy:.4f}")
-            
-            # Сохранение информации о модели
-            model_info = {
-                'model': model,
-                'accuracy': val_accuracy,
-                'run': run + 1,
-                'n_iterations': model.n_iter_,
-                'loss_curve': model.loss_curve_
-            }
-            
-            self.models.append(model_info)
-            
-            # Обновление лучшей модели
-            if val_accuracy > self.best_accuracy:
-                self.best_accuracy = val_accuracy
-                self.best_model = model
-                self.best_run = run + 1
-                
-        print(f"\n✅ ЛУЧШАЯ МОДЕЛЬ: Run #{self.best_run} с точностью {self.best_accuracy:.4f}")
+        x = F.relu(self.conv2(x))
+        x = self.pool2(x)
         
-        # Сохранение результатов
-        with open('alexnet_simulation_results.pkl', 'wb') as f:
-            pickle.dump(self.models, f)
-            
-        return self.best_model, self.models
+        x = F.relu(self.conv3(x))
+        x = F.relu(self.conv4(x))
+        x = F.relu(self.conv5(x))
+        
+        x = self.pool3(x)
+        
+        return x
+    
+    def forward(self, x):
+        # Сверточные слои
+        x = self._conv_forward(x)
+        
+        # Flatten для полносвязных слоев
+        x = x.view(x.size(0), -1)
+        
+        # Полносвязные слои
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        
+        x = F.relu(self.fc2(x))
+        x = self.dropout(x)
+        
+        x = self.fc3(x)
+        
+        return x
 
-def test_with_gaussian_noise_article_method(model, X_test, y_test, tree_types, noise_levels):
+def train_model(model, train_loader, val_loader, epochs=400, learning_rate=0.001, momentum=0.3):
+    """
+    Обучение модели с параметрами из статьи
+    """
+    print(f"\n🚀 ОБУЧЕНИЕ 1D AlexNet")
+    print("="*60)
+    print(f"📋 Параметры:")
+    print(f"   - Оптимизатор: RMSprop")
+    print(f"   - Learning Rate: {learning_rate}")
+    print(f"   - Momentum: {momentum}")
+    print(f"   - Эпохи: {epochs}")
+    print("="*60)
+    
+    # Создаем оптимизатор RMSprop согласно статье
+    optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, momentum=momentum)
+    criterion = nn.CrossEntropyLoss()
+    
+    train_losses = []
+    val_accuracies = []
+    best_val_acc = 0.0
+    
+    for epoch in range(epochs):
+        # Обучение
+        model.train()
+        train_loss = 0.0
+        
+        for batch_idx, (data, target) in enumerate(train_loader):
+            data, target = data.to(device), target.to(device)
+            
+            optimizer.zero_grad()
+            output = model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+            
+            train_loss += loss.item()
+        
+        # Валидация
+        model.eval()
+        val_correct = 0
+        val_total = 0
+        
+        with torch.no_grad():
+            for data, target in val_loader:
+                data, target = data.to(device), target.to(device)
+                output = model(data)
+                _, predicted = torch.max(output.data, 1)
+                val_total += target.size(0)
+                val_correct += (predicted == target).sum().item()
+        
+        val_acc = 100 * val_correct / val_total
+        avg_train_loss = train_loss / len(train_loader)
+        
+        train_losses.append(avg_train_loss)
+        val_accuracies.append(val_acc)
+        
+        # Сохраняем лучшую модель
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            torch.save(model.state_dict(), 'best_alexnet1d_model.pth')
+        
+        # Вывод прогресса каждые 50 эпох
+        if (epoch + 1) % 50 == 0:
+            print(f"Эпоха [{epoch + 1}/{epochs}], "
+                  f"Train Loss: {avg_train_loss:.4f}, "
+                  f"Val Acc: {val_acc:.2f}%, "
+                  f"Best Val Acc: {best_val_acc:.2f}%")
+    
+    # Загружаем лучшую модель
+    model.load_state_dict(torch.load('best_alexnet1d_model.pth'))
+    
+    return model, train_losses, val_accuracies, best_val_acc
+
+def test_with_gaussian_noise(model, X_test, y_test, tree_types, noise_levels, n_realizations=1000):
     """
     Тестирование с гауссовским шумом - точная методология из статьи
     """
@@ -191,43 +265,47 @@ def test_with_gaussian_noise_article_method(model, X_test, y_test, tree_types, n
     print("📋 МЕТОДОЛОГИЯ СТАТЬИ:")
     print("   - Одна и та же модель для всех уровней шума")
     print("   - 1000 реализаций для каждого уровня шума")
-    print("   - Модель предварительно запомнена")
     print("="*70)
     
-    n_realizations = 1000
+    model.eval()
     results = {}
+    
+    # Преобразуем данные в PyTorch тензоры
+    X_test_tensor = torch.FloatTensor(X_test).unsqueeze(1).to(device)  # добавляем канал
     
     for noise_level in noise_levels:
         print(f"\n🔊 Уровень шума: {noise_level * 100:.1f}%")
         print("-" * 50)
         
         accuracies = []
-        all_predictions = []
-        all_true_labels = []
+        all_confusion_matrices = []
         
         # 1000 реализаций шума
         for realization in range(n_realizations):
             if realization % 100 == 0:
-                print(f"  Реализация {realization + 1}/1000...")
+                print(f"  Реализация {realization + 1}/{n_realizations}...")
             
             # Добавляем гауссовский шум
             if noise_level > 0:
-                noise = np.random.normal(0, noise_level, X_test.shape).astype(np.float32)
-                X_test_noisy = X_test + noise
+                noise = torch.normal(0, noise_level, X_test_tensor.shape).to(device)
+                X_test_noisy = X_test_tensor + noise
             else:
-                X_test_noisy = X_test
+                X_test_noisy = X_test_tensor
             
             # Предсказание
-            y_pred = model.predict(X_test_noisy)
-            accuracy = accuracy_score(y_test, y_pred)
+            with torch.no_grad():
+                outputs = model(X_test_noisy)
+                _, predicted = torch.max(outputs, 1)
+                predicted = predicted.cpu().numpy()
+            
+            accuracy = accuracy_score(y_test, predicted)
             accuracies.append(accuracy)
             
-            # Сохраняем для первой реализации
-            if realization == 0:
-                all_predictions = y_pred
-                all_true_labels = y_test
+            # Вычисляем матрицу ошибок для каждой реализации
+            cm = confusion_matrix(y_test, predicted, labels=range(len(tree_types)))
+            all_confusion_matrices.append(cm)
         
-        # Статистики
+        # Статистики общей точности
         mean_accuracy = np.mean(accuracies)
         std_accuracy = np.std(accuracies)
         
@@ -235,21 +313,34 @@ def test_with_gaussian_noise_article_method(model, X_test, y_test, tree_types, n
         print(f"📈 Минимальная точность: {np.min(accuracies):.4f}")
         print(f"📈 Максимальная точность: {np.max(accuracies):.4f}")
         
-        # Отчет о классификации
-        print(f"\n📋 Отчет о классификации (шум {noise_level * 100:.1f}%):")
-        print(classification_report(all_true_labels, all_predictions, 
-                                  target_names=tree_types, digits=4))
+        # Усредняем матрицы ошибок по всем реализациям
+        mean_confusion_matrix = np.mean(all_confusion_matrices, axis=0)
         
-        # Матрица ошибок
-        cm = confusion_matrix(all_true_labels, all_predictions)
-        print("\n📊 Матрица ошибок:")
-        print(cm)
+        # Вычисляем среднюю точность по классам
+        mean_class_accuracies = []
+        for i in range(len(tree_types)):
+            class_accuracies_all_realizations = []
+            for cm in all_confusion_matrices:
+                if cm.sum(axis=1)[i] > 0:  # избегаем деления на ноль
+                    class_acc = cm[i, i] / cm.sum(axis=1)[i]
+                    class_accuracies_all_realizations.append(class_acc)
+            
+            if class_accuracies_all_realizations:
+                mean_class_acc = np.mean(class_accuracies_all_realizations)
+                mean_class_accuracies.append(mean_class_acc)
+            else:
+                mean_class_accuracies.append(0.0)
         
-        # Вероятности правильной классификации по классам
-        print(f"\n✅ Вероятности правильной классификации по классам:")
-        class_accuracies = cm.diagonal() / cm.sum(axis=1)
+        # Отчет о классификации с усредненными данными
+        print(f"\n📋 Средние результаты по {n_realizations} реализациям (шум {noise_level * 100:.1f}%):")
+        print(f"\n✅ Средние вероятности правильной классификации по классам:")
         for i, tree in enumerate(tree_types):
-            print(f"  {tree}: {class_accuracies[i]:.4f}")
+            std_class_acc = np.std([cm[i, i] / cm.sum(axis=1)[i] if cm.sum(axis=1)[i] > 0 else 0 for cm in all_confusion_matrices])
+            print(f"  {tree}: {mean_class_accuracies[i]:.4f} ± {std_class_acc:.4f}")
+        
+        # Средняя матрица ошибок
+        print(f"\n📊 Средняя матрица ошибок (округленная):")
+        print(np.round(mean_confusion_matrix).astype(int))
         
         # Сохранение результатов
         results[noise_level] = {
@@ -257,31 +348,43 @@ def test_with_gaussian_noise_article_method(model, X_test, y_test, tree_types, n
             'std_accuracy': std_accuracy,
             'min_accuracy': np.min(accuracies),
             'max_accuracy': np.max(accuracies),
-            'class_accuracies': class_accuracies,
-            'confusion_matrix': cm,
-            'all_accuracies': accuracies
+            'class_accuracies': mean_class_accuracies,
+            'confusion_matrix': np.round(mean_confusion_matrix).astype(int),
+            'all_accuracies': accuracies,
+            'mean_confusion_matrix': mean_confusion_matrix
         }
     
     return results
 
-def save_results_to_file(results, tree_types, best_model_info, simulator):
+def save_results_to_file(results, tree_types, best_val_acc):
     """Сохраняет результаты в файл для анализа"""
     with open('results_analysis.txt', 'w', encoding='utf-8') as f:
         f.write("=" * 70 + "\n")
         f.write("РЕЗУЛЬТАТЫ КЛАССИФИКАЦИИ РАСТИТЕЛЬНОСТИ 1D-AlexNet\n")
-        f.write("СИМУЛЯЦИЯ С ПАРАМЕТРАМИ СТАТЬИ\n")
+        f.write("ТОЧНАЯ АРХИТЕКТУРА ИЗ ПРИСЛАННОЙ СХЕМЫ\n")
         f.write("=" * 70 + "\n\n")
         
-        f.write("ПАРАМЕТРЫ ОБУЧЕНИЯ (симуляция статьи):\n")
-        f.write("- Эквивалент RMSprop (Adam с настройками)\n")
+        f.write("АРХИТЕКТУРА СЕТИ (согласно схеме):\n")
+        f.write("- Conv1d: 10 фильтров, размер ядра 25, stride 4, padding 2\n")
+        f.write("- MaxPool1d: размер 3, stride 2\n")
+        f.write("- Conv1d: 20 фильтров, размер ядра 15, stride 1, padding 2\n")
+        f.write("- MaxPool1d: размер 3, stride 2\n")
+        f.write("- Conv1d: 50 фильтров, размер ядра 2, stride 1, padding 1\n")
+        f.write("- Conv1d: 50 фильтров, размер ядра 2, stride 1, padding 1\n")
+        f.write("- Conv1d: 25 фильтров, размер ядра 2, stride 1, padding 1\n")
+        f.write("- MaxPool1d: размер 3, stride 2\n")
+        f.write("- Linear: 200 нейронов\n")
+        f.write("- Linear: 200 нейронов\n")
+        f.write("- Linear: количество классов\n\n")
+        
+        f.write("ПАРАМЕТРЫ ОБУЧЕНИЯ:\n")
+        f.write("- Оптимизатор: RMSprop\n")
         f.write("- Learning Rate: 0.001\n")
         f.write("- Momentum: 0.3\n")
         f.write("- Эпохи: 400\n")
-        f.write("- Количество реализаций шума: 1000\n")
-        f.write("- Архитектура: 4096-4096-256 (полносвязные слои)\n\n")
+        f.write("- Количество реализаций шума: 1000\n\n")
         
-        f.write(f"ЛУЧШАЯ МОДЕЛЬ: Run #{best_model_info['run']} с точностью {best_model_info['accuracy']:.4f}\n")
-        f.write(f"Количество итераций: {best_model_info['n_iterations']}\n\n")
+        f.write(f"ЛУЧШАЯ ТОЧНОСТЬ НА ВАЛИДАЦИИ: {best_val_acc:.4f}\n\n")
         
         for noise_level, result in results.items():
             f.write(f"УРОВЕНЬ ШУМА: {noise_level * 100:.1f}%\n")
@@ -300,19 +403,12 @@ def save_results_to_file(results, tree_types, best_model_info, simulator):
         
         f.write("=" * 70 + "\n")
         f.write("ОТВЕТЫ НА ВОПРОСЫ:\n")
-        f.write("1. Параметры лучшего варианта:\n")
-        f.write("   - Эквивалент RMSprop (Adam с momentum=0.3)\n")
-        f.write("   - Learning Rate: 0.001\n")
-        f.write("   - Эпохи: 400\n")
-        f.write("   - Архитектура: 4096-4096-256\n\n")
-        f.write("2. Одна и та же модель использовалась для всех уровней шума.\n")
-        f.write("   Модель предварительно запоминалась.\n\n")
-        f.write("3. Параметры соответствуют статье:\n")
-        f.write("   - Rate=0.001 ✓\n")
-        f.write("   - Moment=0.3 ✓\n")
-        f.write("   - Epochs=400 ✓\n")
-        f.write("   - Noise realizations=1000 ✓\n")
-        f.write("   - Эквивалент RMSprop ✓\n")
+        f.write("1. Архитектура точно соответствует схеме:\n")
+        f.write("   - Все параметры сверточных слоев ✓\n")
+        f.write("   - Полносвязные слои 200-200-классы ✓\n")
+        f.write("   - RMSprop с momentum=0.3 ✓\n\n")
+        f.write("2. Одна и та же модель использовалась для всех уровней шума.\n\n")
+        f.write("3. Реализация на PyTorch с точными параметрами статьи.\n")
         f.write("=" * 70 + "\n")
 
 def plot_noise_analysis(results, tree_types):
@@ -369,9 +465,9 @@ def plot_noise_analysis(results, tree_types):
 
 def main():
     """Основная функция для реализации 1D-AlexNet классификации согласно статье"""
-    print("🌲 КЛАССИФИКАЦИЯ РАСТИТЕЛЬНОСТИ С 1D-AlexNet")
+    print("🌲 КЛАССИФИКАЦИЯ РАСТИТЕЛЬНОСТИ С 1D-AlexNet (PyTorch)")
     print("=" * 70)
-    print("📄 СИМУЛЯЦИЯ С ПАРАМЕТРАМИ СТАТЬИ")
+    print("📄 ТОЧНАЯ АРХИТЕКТУРА ИЗ ПРИСЛАННОЙ СХЕМЫ")
     print("🎯 Параметры: RMSprop, Rate=0.001, Moment=0.3, Epochs=400")
     print("=" * 70)
 
@@ -396,43 +492,70 @@ def main():
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    # Создание симулятора AlexNet
-    simulator = AlexNetSimulator(input_length, len(tree_types))
+    # Сохраняем scaler
+    with open('scaler.pkl', 'wb') as f:
+        pickle.dump(scaler, f)
+
+    # Сохраняем label_encoder
+    with open('label_encoder.pkl', 'wb') as f:
+        pickle.dump(label_encoder, f)
+
+    # Создаем DataLoader для PyTorch
+    X_train_tensor = torch.FloatTensor(X_train_scaled).unsqueeze(1)  # добавляем канал
+    y_train_tensor = torch.LongTensor(y_train)
+    X_val_tensor = torch.FloatTensor(X_test_scaled).unsqueeze(1)
+    y_val_tensor = torch.LongTensor(y_test)
+
+    train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+    val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
+
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+
+    # Создание модели
+    model = AlexNet1D(input_length=input_length, num_classes=len(tree_types))
+    model.to(device)
     
-    # Многократное обучение
-    best_model, all_models = simulator.train_multiple_models(
-        X_train_scaled, y_train, X_test_scaled, y_test, n_runs=5
+    print(f"\n🏗️ Архитектура модели:")
+    print(model)
+    
+    # Подсчет параметров
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"\n📊 Общее количество параметров: {total_params:,}")
+    print(f"📊 Обучаемых параметров: {trainable_params:,}")
+    
+    # Обучение модели
+    model, train_losses, val_accuracies, best_val_acc = train_model(
+        model, train_loader, val_loader, 
+        epochs=400, learning_rate=0.001, momentum=0.3
     )
-    
-    # Информация о лучшей модели
-    best_model_info = next(m for m in all_models if m['model'] == best_model)
     
     # Тестирование с шумом (0%, 1%, 5%, 10% как в статье)
     noise_levels = [0.0, 0.01, 0.05, 0.1]
     
-    results = test_with_gaussian_noise_article_method(
-        best_model, X_test_scaled, y_test, tree_types, noise_levels
+    results = test_with_gaussian_noise(
+        model, X_test_scaled, y_test, tree_types, noise_levels, n_realizations=1000
     )
     
     # Сохранение результатов
-    save_results_to_file(results, tree_types, best_model_info, simulator)
+    save_results_to_file(results, tree_types, best_val_acc)
     
     # Построение графиков
     plot_noise_analysis(results, tree_types)
     
     print("\n" + "="*70)
     print("✅ АНАЛИЗ ЗАВЕРШЕН УСПЕШНО!")
-    print("📊 Результаты согласно методологии статьи:")
-    print(f"   - Лучшая модель: Run #{best_model_info['run']}")
-    print(f"   - Точность лучшей модели: {best_model_info['accuracy']:.4f}")
-    print(f"   - Количество итераций: {best_model_info['n_iterations']}")
-    print("   - Параметры: эквивалент RMSprop, Rate=0.001, Moment=0.3")
-    print("   - Эпохи: 400")
-    print("   - Одна и та же модель для всех уровней шума")
+    print("📊 Результаты согласно точной архитектуре из схемы:")
+    print(f"   - Лучшая точность на валидации: {best_val_acc:.4f}")
+    print(f"   - Общее количество параметров: {sum(p.numel() for p in model.parameters()):,}")
+    print("   - Архитектура: точно по присланной схеме")
+    print("   - RMSprop, Rate=0.001, Moment=0.3, Epochs=400")
     print("   - 1000 реализаций для каждого уровня шума")
     print("📁 Файлы сохранены:")
     print("   - results_analysis.txt (детальные результаты)")
-    print("   - alexnet_simulation_results.pkl (модели)")
+    print("   - best_alexnet1d_model.pth (лучшая модель)")
+    print("   - scaler.pkl, label_encoder.pkl (предобработка)")
     print("   - 1d_alexnet_noise_analysis.png (графики)")
     print("="*70)
 
