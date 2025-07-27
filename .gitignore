@@ -1,0 +1,46 @@
+# Большие модели и файлы данных
+*.pkl
+*.keras
+*.h5
+*.hdf5
+*.model
+
+# Виртуальные окружения
+spektr_env_tf/
+venv/
+env/
+.venv/
+
+# Результаты и временные файлы
+results_*/
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
+# Кэш Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+
+# Логи
+*.log
+logs/
+
+# Временные файлы
+temp/
+tmp/
+*.tmp
