@@ -23,7 +23,7 @@ def load_spectral_data_7_species():
     for species_name in species:
         print(f"Загрузка данных для {species_name}...")
         
-        folder_path = f'../Спектры, весенний период, 7 видов/{species_name}'
+        folder_path = f'Спектры, весенний период, 7 видов/{species_name}'
         files = glob.glob(f'{folder_path}/*.xlsx')
         
         # Берем первые 30 файлов для каждого вида
@@ -74,15 +74,15 @@ def create_1d_alexnet_model(input_shape, num_classes):
     
     return model
 
-def add_gaussian_noise(data, noise_level):
+def add_noise(X, noise_level):
     """Добавляет гауссовский шум к данным"""
     if noise_level == 0:
-        return data
+        return X
     
-    # Вычисляем стандартное отклонение на основе уровня шума
-    std_dev = noise_level / 100.0 * np.std(data)
-    noise = np.random.normal(0, std_dev, data.shape)
-    return data + noise
+    # Шум как процент от стандартного отклонения данных
+    noise_std = noise_level / 100.0 * np.std(X)
+    noise = np.random.normal(0, noise_std, X.shape)
+    return X + noise
 
 def plot_confusion_matrix(y_true, y_pred, class_names, title, filename):
     """Создает матрицу ошибок"""
@@ -119,33 +119,57 @@ def plot_normalized_confusion_matrix(y_true, y_pred, class_names, title, filenam
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     plt.close()
 
-def save_test_results(noise_levels, accuracies, filename):
-    """Сохраняет результаты тестирования в текстовый файл"""
+def save_parameters_to_file(filename):
+    """Сохраняет параметры модели в текстовый файл"""
     with open(filename, 'w', encoding='utf-8') as f:
-        f.write("ТЕСТИРОВАНИЕ НА ЗАШУМЛЕННЫХ ДАННЫХ - 7 ВИДОВ ДЕРЕВЬЕВ\n")
-        f.write("=" * 60 + "\n\n")
+        f.write("ПАРАМЕТРЫ МОДЕЛИ 1D-ALEXNET ДЛЯ 7 ВИДОВ\n")
+        f.write("=" * 50 + "\n\n")
         f.write("Модель: 1D-AlexNet (CNN)\n")
-        f.write("Обучение: на чистых данных (80%)\n")
-        f.write("Тестирование: на зашумленных данных (20%)\n\n")
+        f.write("Архитектура:\n")
+        f.write("- Conv1D(96, 11, strides=4) + BatchNorm + MaxPool(3,2)\n")
+        f.write("- Conv1D(256, 5, padding='same') + BatchNorm + MaxPool(3,2)\n")
+        f.write("- Conv1D(384, 3, padding='same')\n")
+        f.write("- Conv1D(384, 3, padding='same')\n")
+        f.write("- Conv1D(256, 3, padding='same') + MaxPool(3,2)\n")
+        f.write("- Dense(4096) + Dropout(0.5)\n")
+        f.write("- Dense(4096) + Dropout(0.5)\n")
+        f.write("- Dense(num_classes, softmax)\n\n")
         
-        f.write("РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ:\n")
-        f.write("-" * 40 + "\n")
-        for noise, acc in zip(noise_levels, accuracies):
-            f.write(f"Шум {noise}%: Точность {acc:.4f} ({acc*100:.2f}%)\n")
+        f.write("ПАРАМЕТРЫ ОБУЧЕНИЯ:\n")
+        f.write("-" * 20 + "\n")
+        f.write("Оптимизатор: Adam\n")
+        f.write("Learning Rate: 0.001\n")
+        f.write("Loss: categorical_crossentropy\n")
+        f.write("Эпохи: 100\n")
+        f.write("Batch Size: 32\n")
+        f.write("Validation Split: 0.2\n\n")
         
-        f.write(f"\nАНАЛИЗ УСТОЙЧИВОСТИ:\n")
-        f.write("-" * 40 + "\n")
-        clean_accuracy = accuracies[0]  # 0% шума
-        for i, (noise, acc) in enumerate(zip(noise_levels[1:], accuracies[1:]), 1):
-            degradation = (clean_accuracy - acc) / clean_accuracy * 100
-            f.write(f"При шуме {noise}%: деградация {degradation:.2f}%\n")
+        f.write("ПАРАМЕТРЫ ДАННЫХ:\n")
+        f.write("-" * 20 + "\n")
+        f.write("Количество видов: 7\n")
+        f.write("Виды: береза, дуб, ель, клен, липа, осина, сосна\n")
+        f.write("Файлов на вид: 30\n")
+        f.write("Разделение данных: 80% обучение, 20% тест\n")
+        f.write("Стратификация: Да\n")
+        f.write("Предобработка: StandardScaler\n\n")
+        
+        f.write("ПАРАМЕТРЫ ШУМА:\n")
+        f.write("-" * 20 + "\n")
+        f.write("Тип шума: Аддитивный гауссовский\n")
+        f.write("Среднее: 0\n")
+        f.write("Стандартное отклонение: процент от std данных\n")
+        f.write("Уровни шума: 0%, 1%, 5%, 10%\n\n")
+        
+        f.write("ВОСПРОИЗВОДИМОСТЬ:\n")
+        f.write("-" * 20 + "\n")
+        f.write("np.random.seed(42)\n")
+        f.write("tf.random.set_seed(42)\n")
+        f.write("random_state=42 в train_test_split\n")
 
 def main():
-    """Основная функция для тестирования на зашумленных данных"""
-    print("ТЕСТИРОВАНИЕ НА ЗАШУМЛЕННЫХ ДАННЫХ - 7 ВИДОВ ДЕРЕВЬЕВ")
-    print("=" * 60)
-    print("Обучение на чистых данных, тестирование с шумом 1%, 5%, 10%")
-    print("=" * 60)
+    """Основная функция"""
+    print("КЛАССИФИКАЦИЯ 7 ВИДОВ ДЕРЕВЬЕВ - 1D-ALEXNET С АНАЛИЗОМ ШУМА")
+    print("=" * 70)
     
     # Установка seed для воспроизводимости
     np.random.seed(42)
@@ -173,7 +197,7 @@ def main():
     print(f"Форма данных: {X_processed.shape}")
     print(f"Классы: {class_names}")
     
-    # Разделение данных: 80% обучение, 20% тест
+    # Разделение данных
     X_train, X_test, y_train, y_test = train_test_split(
         X_processed, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
     )
@@ -218,8 +242,8 @@ def main():
         min_lr=1e-7
     )
     
-    # Обучение модели на чистых данных
-    print("\nОбучение модели на чистых данных (80%)...")
+    # Обучение модели
+    print("\nОбучение модели...")
     history = model.fit(
         X_train_cnn, y_train_onehot,
         epochs=100,
@@ -229,50 +253,60 @@ def main():
         verbose=1
     )
     
-    # Тестирование на зашумленных данных (20%)
-    noise_levels = [0, 1, 5, 10]  # 0% - чистые данные, 1%, 5%, 10% - зашумленные
-    accuracies = []
-    
-    print(f"\nТестирование на зашумленных данных (20%)...")
+    # Тестирование на разных уровнях шума
+    noise_levels = [0, 1, 5, 10]
+    results = {}
     
     for noise_level in noise_levels:
-        print(f"\nТестирование с шумом {noise_level}%...")
+        print(f"\nТестирование с {noise_level}% шумом...")
         
         # Добавление шума к тестовым данным
-        X_test_noisy = add_gaussian_noise(X_test_scaled, noise_level)
+        X_test_noisy = add_noise(X_test_scaled, noise_level)
         X_test_noisy_cnn = X_test_noisy.reshape(X_test_noisy.shape[0], X_test_noisy.shape[1], 1)
         
         # Предсказание
         y_pred_proba = model.predict(X_test_noisy_cnn)
         y_pred = np.argmax(y_pred_proba, axis=1)
         accuracy = accuracy_score(y_test, y_pred)
-        accuracies.append(accuracy)
         
-        print(f"Точность при шуме {noise_level}%: {accuracy:.4f}")
+        results[noise_level] = {
+            'accuracy': accuracy,
+            'predictions': y_pred,
+            'true': y_test
+        }
         
-        # Создание матриц ошибок для каждого уровня шума
-        title = f'Матрица ошибок - Шум {noise_level}% (точность: {accuracy:.4f})'
-        filename = f'alexnet_7_species_noise_{noise_level}percent_confusion_matrix.png'
-        plot_confusion_matrix(y_test, y_pred, class_names, title, filename)
+        print(f"Точность: {accuracy:.4f}")
         
-        # Нормализованная матрица
-        title_norm = f'Нормализованная матрица ошибок - Шум {noise_level}%'
-        filename_norm = f'alexnet_7_species_noise_{noise_level}percent_normalized_confusion_matrix.png'
-        plot_normalized_confusion_matrix(y_test, y_pred, class_names, title_norm, filename_norm)
+        # Создание матриц ошибок
+        if noise_level in [0, 1, 5, 10]:
+            # Обычная матрица
+            title = f'Матрица ошибок - {noise_level}% шум (точность: {accuracy:.4f})'
+            filename = f'alexnet_7_species_confusion_matrix_{noise_level}percent.png'
+            plot_confusion_matrix(y_test, y_pred, class_names, title, filename)
+            print(f"Матрица сохранена: {filename}")
+            
+            # Нормализованная матрица
+            title_norm = f'Нормализованная матрица ошибок - {noise_level}% шум'
+            filename_norm = f'alexnet_7_species_normalized_confusion_matrix_{noise_level}percent.png'
+            plot_normalized_confusion_matrix(y_test, y_pred, class_names, title_norm, filename_norm)
+            print(f"Нормализованная матрица сохранена: {filename_norm}")
     
-    # Сохранение результатов тестирования
-    save_test_results(noise_levels, accuracies, 'test_results_7_species.txt')
+    # Сохранение параметров
+    save_parameters_to_file('parameters_7_species_alexnet.txt')
+    print("\nПараметры сохранены: parameters_7_species_alexnet.txt")
     
-    print(f"\nРЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ:")
-    print("-" * 40)
-    for noise, acc in zip(noise_levels, accuracies):
-        print(f"Шум {noise}%: {acc:.4f} ({acc*100:.2f}%)")
+    # Итоговый отчет
+    print("\nИТОГОВЫЕ РЕЗУЛЬТАТЫ:")
+    print("-" * 30)
+    for noise_level in noise_levels:
+        acc = results[noise_level]['accuracy']
+        print(f"{noise_level}% шум: {acc:.4f}")
     
     print(f"\nФайлы созданы:")
-    for noise in noise_levels:
-        print(f"- alexnet_7_species_noise_{noise}percent_confusion_matrix.png")
-        print(f"- alexnet_7_species_noise_{noise}percent_normalized_confusion_matrix.png")
-    print(f"- test_results_7_species.txt")
+    for noise_level in [0, 1, 5, 10]:
+        print(f"- alexnet_7_species_confusion_matrix_{noise_level}percent.png")
+        print(f"- alexnet_7_species_normalized_confusion_matrix_{noise_level}percent.png")
+    print("- parameters_7_species_alexnet.txt")
 
 if __name__ == "__main__":
     main() 
