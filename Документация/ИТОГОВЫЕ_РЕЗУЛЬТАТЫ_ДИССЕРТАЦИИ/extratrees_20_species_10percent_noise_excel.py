@@ -48,7 +48,8 @@ def add_gaussian_noise(data, noise_level):
         return data
     
     # Вычисляем стандартное отклонение на основе уровня шума
-    std_dev = noise_level / 100.0 * np.std(data)
+    # noise_level - это коэффициент (0.1 для 10%)
+    std_dev = noise_level * np.std(data)
     noise = np.random.normal(0, std_dev, data.shape)
     return data + noise
 
