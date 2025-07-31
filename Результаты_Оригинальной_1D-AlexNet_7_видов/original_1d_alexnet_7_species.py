@@ -29,7 +29,7 @@ tf.random.set_seed(42)
 def load_spring_7_species_data():
     """Загружает данные для 7 весенних видов"""
     
-    spring_folder = "Исходные_данные/Спектры, весенний период, 7 видов"
+    spring_folder = "../Исходные_данные/Спектры, весенний период, 7 видов"
     
     print("🌱 ЗАГРУЗКА ДАННЫХ 7 ВЕСЕННИХ ВИДОВ...")
     
@@ -95,36 +95,34 @@ def preprocess_spectra(spectra_list):
     return X
 
 def create_original_1d_alexnet_model(input_shape, num_classes):
-    """Создает ОРИГИНАЛЬНУЮ 1D-AlexNet согласно научной статье"""
+    """Создает ПРАВИЛЬНУЮ ОРИГИНАЛЬНУЮ 1D-AlexNet"""
     
-    print("🏗️ СОЗДАНИЕ ОРИГИНАЛЬНОЙ 1D-AlexNet МОДЕЛИ...")
+    print("🏗️ СОЗДАНИЕ ПРАВИЛЬНОЙ ОРИГИНАЛЬНОЙ 1D-AlexNet МОДЕЛИ...")
     
     model = keras.Sequential([
-        # Группа 1: Первая свертка + пулинг
-        layers.Conv1D(filters=96, kernel_size=11, strides=4, padding='same', 
+        # Группа 1: Первая свертка + пулинг (как в оригинальной AlexNet)
+        layers.Conv1D(filters=96, kernel_size=11, strides=4, padding='valid', 
                      activation='relu', input_shape=input_shape),
-        layers.BatchNormalization(),
         layers.MaxPooling1D(pool_size=3, strides=2),
         
         # Группа 2: Вторая свертка + пулинг
-        layers.Conv1D(filters=256, kernel_size=5, strides=1, padding='same', 
+        layers.Conv1D(filters=256, kernel_size=5, strides=1, padding='valid', 
                      activation='relu'),
-        layers.BatchNormalization(),
         layers.MaxPooling1D(pool_size=3, strides=2),
         
-        # Группа 3: Три свертки подряд + пулинг
-        layers.Conv1D(filters=384, kernel_size=3, strides=1, padding='same', 
+        # Группа 3: Три свертки подряд + пулинг (как в оригинальной AlexNet)
+        layers.Conv1D(filters=384, kernel_size=3, strides=1, padding='valid', 
                      activation='relu'),
-        layers.Conv1D(filters=384, kernel_size=3, strides=1, padding='same', 
+        layers.Conv1D(filters=384, kernel_size=3, strides=1, padding='valid', 
                      activation='relu'),
-        layers.Conv1D(filters=256, kernel_size=3, strides=1, padding='same', 
+        layers.Conv1D(filters=256, kernel_size=3, strides=1, padding='valid', 
                      activation='relu'),
         layers.MaxPooling1D(pool_size=3, strides=2),
         
         # Flatten для перехода к полносвязным слоям
         layers.Flatten(),
         
-        # Полносвязные слои (оригинальная архитектура)
+        # Полносвязные слои (точно как в оригинальной AlexNet)
         layers.Dense(4096, activation='relu'),
         layers.Dropout(0.5),
         layers.Dense(4096, activation='relu'),
@@ -132,14 +130,14 @@ def create_original_1d_alexnet_model(input_shape, num_classes):
         layers.Dense(num_classes, activation='softmax')
     ])
     
-    # Компиляция модели с оригинальными параметрами
+    # Компиляция модели с оригинальными параметрами AlexNet
     model.compile(
         optimizer=keras.optimizers.SGD(learning_rate=0.01, momentum=0.9),
         loss='categorical_crossentropy',
         metrics=['accuracy']
     )
     
-    print(f"   📊 ОРИГИНАЛЬНАЯ архитектура модели:")
+    print(f"   📊 ПРАВИЛЬНАЯ ОРИГИНАЛЬНАЯ архитектура модели:")
     model.summary()
     
     return model
