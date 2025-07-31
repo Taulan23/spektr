@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-ФИНАЛЬНЫЙ анализ для диссертации - точно соответствует оригинальным результатам
-Extra Trees классификатор, 19 видов деревьев (без клен_ам)
-Осина: 100% точность, Сирень: 100% точность (как в confusion matrix)
-"""
-
 import pandas as pd
 import numpy as np
 import os
@@ -16,8 +8,7 @@ import joblib
 from datetime import datetime
 
 def load_20_species_data():
-    """Загружает данные для 20 видов деревьев"""
-    # Используем точно такой же путь как в оригинальном скрипте
+    """Загружает данные для 20 видов деревьев точно как в оригинальном скрипте"""
     base_path = "../Исходные_данные/Спектры, весенний период, 20 видов"
     
     all_data = []
@@ -85,7 +76,7 @@ def preprocess_spectra(spectra_list):
     return X
 
 def extract_enhanced_features(X):
-    """Извлекает расширенные признаки из спектров"""
+    """Извлекает расширенные признаки из спектров точно как в оригинальном скрипте"""
     print("Извлечение признаков...")
     
     features_list = []
@@ -164,8 +155,8 @@ def extract_enhanced_features(X):
     
     return np.array(features_list)
 
-def create_detailed_excel_analysis(model, X_test, y_test, scaler, label_encoder, noise_level=0.10):
-    """Создает детальный Excel анализ для осины и сирени"""
+def create_correct_excel_analysis(model, X_test, y_test, scaler, label_encoder, noise_level=0.10):
+    """Создает правильный Excel анализ для осины и сирени"""
     
     # Получаем правильный порядок классов из label_encoder
     tree_types = label_encoder.classes_
@@ -233,7 +224,7 @@ def create_detailed_excel_analysis(model, X_test, y_test, scaler, label_encoder,
     
     # Создаем Excel файл с несколькими листами
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"../Результаты_Extra_Trees_20_видов/dissertation_analysis_{timestamp}.xlsx"
+    filename = f"../Результаты_Extra_Trees_20_видов/correct_dissertation_analysis_{timestamp}.xlsx"
     
     with pd.ExcelWriter(filename, engine='openpyxl') as writer:
         # Лист 1: Детальный анализ
@@ -260,7 +251,8 @@ def create_detailed_excel_analysis(model, X_test, y_test, scaler, label_encoder,
                 'Количество_образцов': len(aspen_data),
                 'Правильно_классифицировано': aspen_correct,
                 'Точность': aspen_accuracy,
-                'Средняя_вероятность_осины': aspen_data[f'вероятность_осина'].mean()
+                'Средняя_вероятность_осины': aspen_data[f'вероятность_осина'].mean(),
+                'Ожидаемая_точность_из_CM': 0.9355
             })
         
         # Статистика для сирени
@@ -273,7 +265,8 @@ def create_detailed_excel_analysis(model, X_test, y_test, scaler, label_encoder,
                 'Количество_образцов': len(lilac_data),
                 'Правильно_классифицировано': lilac_correct,
                 'Точность': lilac_accuracy,
-                'Средняя_вероятность_сирени': lilac_data[f'вероятность_сирень'].mean()
+                'Средняя_вероятность_сирени': lilac_data[f'вероятность_сирень'].mean(),
+                'Ожидаемая_точность_из_CM': 1.0
             })
         
         df_stats = pd.DataFrame(stats_data)
@@ -283,6 +276,7 @@ def create_detailed_excel_analysis(model, X_test, y_test, scaler, label_encoder,
     print("\nСТАТИСТИКА:")
     for _, row in df_stats.iterrows():
         print(f"{row['Вид']}: {row['Точность']:.4f} ({row['Правильно_классифицировано']}/{row['Количество_образцов']})")
+        print(f"  Ожидаемая из CM: {row['Ожидаемая_точность_из_CM']:.4f}")
     
     return filename
 
@@ -330,8 +324,8 @@ def main():
     print(f"Размер обучающей выборки: {X_train.shape}")
     print(f"Размер тестовой выборки: {X_test.shape}")
     
-    print("\n=== СОЗДАНИЕ ДЕТАЛЬНОГО АНАЛИЗА ===")
-    excel_file = create_detailed_excel_analysis(model, X_test, y_test, scaler, label_encoder, noise_level=0.10)
+    print("\n=== СОЗДАНИЕ ПРАВИЛЬНОГО АНАЛИЗА ===")
+    excel_file = create_correct_excel_analysis(model, X_test, y_test, scaler, label_encoder, noise_level=0.10)
     
     print(f"\nАнализ завершен! Файл: {excel_file}")
 
