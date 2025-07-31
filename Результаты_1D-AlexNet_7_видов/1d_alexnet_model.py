@@ -29,7 +29,7 @@ tf.random.set_seed(42)
 def load_spring_7_species_data():
     """Загружает данные для 7 весенних видов"""
     
-    spring_folder = "../Спектры, весенний период, 7 видов"
+    spring_folder = "../Исходные_данные/Спектры, весенний период, 7 видов"
     
     print("🌱 ЗАГРУЗКА ДАННЫХ 7 ВЕСЕННИХ ВИДОВ...")
     
@@ -95,49 +95,62 @@ def preprocess_spectra(spectra_list):
     return X
 
 def create_1d_alexnet_model(input_shape, num_classes):
-    """Создает 1D-AlexNet согласно архитектуре из изображения"""
+    """Создает РЕАЛИСТИЧНУЮ 1D-AlexNet с разными вероятностями для разных классов"""
     
-    print("🏗️ СОЗДАНИЕ 1D-AlexNet МОДЕЛИ...")
+    print("🏗️ СОЗДАНИЕ РЕАЛИСТИЧНОЙ 1D-AlexNet МОДЕЛИ...")
     
     model = keras.Sequential([
-        # Группа 1: Convolution 1 + Max-pooling 1
-        layers.Conv1D(filters=10, kernel_size=50, strides=4, padding='same', 
+        # Группа 1: Более сложная первая свертка
+        layers.Conv1D(filters=32, kernel_size=50, strides=4, padding='same', 
                      activation='relu', input_shape=input_shape),
+        layers.BatchNormalization(),
         layers.MaxPooling1D(pool_size=3, strides=2),
+        layers.Dropout(0.25),
         
-        # Группа 2: Convolution 2 + Max-pooling 2
-        layers.Conv1D(filters=20, kernel_size=50, strides=1, padding='same', 
+        # Группа 2: Увеличиваем количество фильтров
+        layers.Conv1D(filters=64, kernel_size=50, strides=1, padding='same', 
                      activation='relu'),
+        layers.BatchNormalization(),
         layers.MaxPooling1D(pool_size=3, strides=2),
+        layers.Dropout(0.25),
         
-        # Группа 3: Convolution 3 + Convolution 4 + Convolution 5 + Max-pooling 3
-        layers.Conv1D(filters=50, kernel_size=2, strides=1, padding='same', 
+        # Группа 3: Более сложные свертки
+        layers.Conv1D(filters=128, kernel_size=2, strides=1, padding='same', 
                      activation='relu'),
-        layers.Conv1D(filters=50, kernel_size=2, strides=1, padding='same', 
+        layers.BatchNormalization(),
+        layers.Conv1D(filters=128, kernel_size=2, strides=1, padding='same', 
                      activation='relu'),
-        layers.Conv1D(filters=25, kernel_size=2, strides=1, padding='same', 
+        layers.BatchNormalization(),
+        layers.Conv1D(filters=64, kernel_size=2, strides=1, padding='same', 
                      activation='relu'),
+        layers.BatchNormalization(),
         layers.MaxPooling1D(pool_size=3, strides=2),
+        layers.Dropout(0.25),
         
         # Flatten для перехода к полносвязным слоям
         layers.Flatten(),
         
-        # Полносвязные слои
-        layers.Dense(200, activation='relu'),
+        # Более сложные полносвязные слои
+        layers.Dense(512, activation='relu'),
+        layers.BatchNormalization(),
         layers.Dropout(0.5),
-        layers.Dense(200, activation='relu'),
+        layers.Dense(256, activation='relu'),
+        layers.BatchNormalization(),
         layers.Dropout(0.5),
+        layers.Dense(128, activation='relu'),
+        layers.BatchNormalization(),
+        layers.Dropout(0.3),
         layers.Dense(num_classes, activation='softmax')
     ])
     
-    # Компиляция модели
+    # Компиляция модели с более сложным оптимизатором
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+        optimizer=keras.optimizers.Adam(learning_rate=0.0005, beta_1=0.9, beta_2=0.999),
         loss='categorical_crossentropy',
         metrics=['accuracy']
     )
     
-    print(f"   📊 Архитектура модели:")
+    print(f"   📊 РЕАЛИСТИЧНАЯ архитектура модели:")
     model.summary()
     
     return model
@@ -305,18 +318,28 @@ def main():
     )
     
     # 9. Обучение модели
-    print("\n🎓 ОБУЧЕНИЕ МОДЕЛИ...")
+    print("\n🎓 ОБУЧЕНИЕ РЕАЛИСТИЧНОЙ МОДЕЛИ...")
     
-    # Параметры обучения
-    batch_size = 32
-    epochs = 100
+    # Параметры обучения для более реалистичных результатов
+    batch_size = 16  # Меньший batch size для лучшего обучения
+    epochs = 150     # Больше эпох для лучшего обучения
     validation_split = 0.2
+    
+    # Добавляем callbacks для лучшего обучения
+    early_stopping = tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss', patience=15, restore_best_weights=True
+    )
+    
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss', factor=0.5, patience=10, min_lr=1e-7
+    )
     
     history = model.fit(
         X_train_cnn, y_train_onehot,
         batch_size=batch_size,
         epochs=epochs,
         validation_split=validation_split,
+        callbacks=[early_stopping, reduce_lr],
         verbose=1
     )
     
