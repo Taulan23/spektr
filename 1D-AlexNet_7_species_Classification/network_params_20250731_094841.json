@@ -1,0 +1,9 @@
+{
+  "architecture": "1D-AlexNet",
+  "timestamp": "20250731_094841",
+  "input_shape": [
+    301,
+    1
+  ],
+  "num_classes": 7,
+  "tree_types": 
