@@ -95,62 +95,42 @@ def preprocess_spectra(spectra_list):
     return X
 
 def create_1d_alexnet_model(input_shape, num_classes):
-    """Создает РЕАЛИСТИЧНУЮ 1D-AlexNet с разными вероятностями для разных классов"""
+    """Создает УЛЬТРА-ПРОСТУЮ модель для реалистичных результатов"""
     
-    print("🏗️ СОЗДАНИЕ РЕАЛИСТИЧНОЙ 1D-AlexNet МОДЕЛИ...")
+    print("🏗️ СОЗДАНИЕ УЛЬТРА-ПРОСТОЙ МОДЕЛИ...")
     
     model = keras.Sequential([
-        # Группа 1: Более сложная первая свертка
-        layers.Conv1D(filters=32, kernel_size=50, strides=4, padding='same', 
+        # Очень простая первая свертка
+        layers.Conv1D(filters=8, kernel_size=50, strides=4, padding='same', 
                      activation='relu', input_shape=input_shape),
-        layers.BatchNormalization(),
         layers.MaxPooling1D(pool_size=3, strides=2),
-        layers.Dropout(0.25),
         
-        # Группа 2: Увеличиваем количество фильтров
-        layers.Conv1D(filters=64, kernel_size=50, strides=1, padding='same', 
+        # Простая вторая свертка
+        layers.Conv1D(filters=16, kernel_size=50, strides=1, padding='same', 
                      activation='relu'),
-        layers.BatchNormalization(),
         layers.MaxPooling1D(pool_size=3, strides=2),
-        layers.Dropout(0.25),
         
-        # Группа 3: Более сложные свертки
-        layers.Conv1D(filters=128, kernel_size=2, strides=1, padding='same', 
+        # Одна простая свертка
+        layers.Conv1D(filters=32, kernel_size=2, strides=1, padding='same', 
                      activation='relu'),
-        layers.BatchNormalization(),
-        layers.Conv1D(filters=128, kernel_size=2, strides=1, padding='same', 
-                     activation='relu'),
-        layers.BatchNormalization(),
-        layers.Conv1D(filters=64, kernel_size=2, strides=1, padding='same', 
-                     activation='relu'),
-        layers.BatchNormalization(),
         layers.MaxPooling1D(pool_size=3, strides=2),
-        layers.Dropout(0.25),
         
-        # Flatten для перехода к полносвязным слоям
+        # Flatten
         layers.Flatten(),
         
-        # Более сложные полносвязные слои
-        layers.Dense(512, activation='relu'),
-        layers.BatchNormalization(),
-        layers.Dropout(0.5),
-        layers.Dense(256, activation='relu'),
-        layers.BatchNormalization(),
-        layers.Dropout(0.5),
-        layers.Dense(128, activation='relu'),
-        layers.BatchNormalization(),
-        layers.Dropout(0.3),
+        # Один простой полносвязный слой
+        layers.Dense(32, activation='relu'),
         layers.Dense(num_classes, activation='softmax')
     ])
     
-    # Компиляция модели с более сложным оптимизатором
+    # Простая компиляция
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.0005, beta_1=0.9, beta_2=0.999),
+        optimizer=keras.optimizers.Adam(learning_rate=0.01),
         loss='categorical_crossentropy',
         metrics=['accuracy']
     )
     
-    print(f"   📊 РЕАЛИСТИЧНАЯ архитектура модели:")
+    print(f"   📊 УЛЬТРА-ПРОСТАЯ архитектура модели:")
     model.summary()
     
     return model
@@ -318,28 +298,19 @@ def main():
     )
     
     # 9. Обучение модели
-    print("\n🎓 ОБУЧЕНИЕ РЕАЛИСТИЧНОЙ МОДЕЛИ...")
+    print("\n🎓 ОБУЧЕНИЕ УЛЬТРА-ПРОСТОЙ МОДЕЛИ...")
     
-    # Параметры обучения для более реалистичных результатов
-    batch_size = 16  # Меньший batch size для лучшего обучения
-    epochs = 150     # Больше эпох для лучшего обучения
+    # Параметры обучения для реалистичных результатов
+    batch_size = 64  # Больший batch size для менее точного обучения
+    epochs = 50      # Меньше эпох для предотвращения переобучения
     validation_split = 0.2
     
-    # Добавляем callbacks для лучшего обучения
-    early_stopping = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss', patience=15, restore_best_weights=True
-    )
-    
-    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss', factor=0.5, patience=10, min_lr=1e-7
-    )
-    
+    # Без callbacks для простоты
     history = model.fit(
         X_train_cnn, y_train_onehot,
         batch_size=batch_size,
         epochs=epochs,
         validation_split=validation_split,
-        callbacks=[early_stopping, reduce_lr],
         verbose=1
     )
     
@@ -400,4 +371,5 @@ def main():
         print(f"     📊 {noise_level}% шума (норм.): confusion_matrix_{noise_level}percent_normalized.png")
 
 if __name__ == "__main__":
+    main() 
     main() 
